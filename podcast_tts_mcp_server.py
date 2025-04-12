@@ -609,26 +609,10 @@ async def check_podcast_status(request_id: str, ctx: Context = None) -> str:
             if request_data["status"] == "completed" and request_data["result"]:
                 response.update(request_data["result"])
                 
-                # If complete and successful, offer to play the audio in non-blocking way
+                # Just include the audio file info without playing it
                 if request_data["result"].get("status") == "success" and "audio_file" in request_data["result"]:
                     if ctx:
-                        await ctx.info(f"Playing completed audio file: {request_data['result']['audio_file']}")
-                    
-                    # Use subprocess with Popen instead of os.system to avoid blocking
-                    try:
-                        # Start the audio playback in a separate process
-                        proc = subprocess.Popen(["afplay", request_data['result']['audio_file']], 
-                                        stdout=subprocess.PIPE, 
-                                        stderr=subprocess.PIPE)
-                        
-                        log_info(f"Started audio playback in background process (PID: {proc.pid})")
-                        
-                        if ctx:
-                            await ctx.debug("Audio playback started in background process")
-                    except Exception as play_error:
-                        log_warning(f"Audio playback error: {str(play_error)}")
-                        if ctx:
-                            await ctx.warning(f"Audio playback error: {str(play_error)}")
+                        await ctx.info(f"TTS request completed: {request_data['result']['audio_file']}")
                     
             elif request_data["status"] == "failed" and request_data["result"]:
                 response.update(request_data["result"])
