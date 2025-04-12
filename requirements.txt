@@ -1,4 +1,7 @@
+# Core dependencies
 edge-tts>=6.1.5
 mcp[cli]>=0.2.0
+
+# API server dependencies (for SSE transport)
 fastapi>=0.95.0
 uvicorn>=0.22.0
