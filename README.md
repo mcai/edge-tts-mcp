@@ -105,10 +105,9 @@ If you encounter issues:
 ├── README.md           - Documentation
 ├── auto_test.sh        - Script to test TTS functionality
 ├── list_voices.py      - Script to list available voices
-├── run_test.sh         - Interactive test script
 ├── setup_claude.sh     - Script to configure Claude
 ├── start.sh            - Script to start the server
-├── test_edge_tts.py    - Interactive test script
+├── test_edge_tts.py    - Interactive test script (not normally used)
 └── venv/               - Python virtual environment
 ```
 
