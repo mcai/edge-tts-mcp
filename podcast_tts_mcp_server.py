@@ -6,7 +6,7 @@ Specialized for multi-speaker podcast conversations with male and female voices.
 File: podcast_tts_mcp_server.py
 """
 
-from fastmcp import FastMCP
+from fastmcp import FastMCP, Context
 import edge_tts
 import tempfile
 import os
@@ -82,7 +82,7 @@ class PodcastConversation(BaseModel):
 
 # ======================= Helper Functions =======================
 
-async def generate_speech(text: str, voice: str, rate: str, volume: str, output_file: str) -> None:
+async def generate_speech(text: str, voice: str, rate: str, volume: str, output_file: str, ctx: Context = None) -> None:
     """
     Generate speech for a text segment and save to a file.
     
@@ -92,6 +92,7 @@ async def generate_speech(text: str, voice: str, rate: str, volume: str, output_
         rate: Speech rate
         volume: Volume adjustment
         output_file: Path to save the audio
+        ctx: MCP context for logging (optional)
         
     Returns:
         None
@@ -107,8 +108,16 @@ async def generate_speech(text: str, voice: str, rate: str, volume: str, output_
             volume=volume
         )
         
+        if ctx:
+            await ctx.debug(f"Generating speech with voice {voice}, rate {rate}, volume {volume}")
+        
         await communicate.save(output_file)
-    except Exception:
+        
+        if ctx:
+            await ctx.debug(f"Speech saved to {output_file}")
+    except Exception as e:
+        if ctx:
+            await ctx.error(f"Speech generation error: {str(e)}")
         raise
 
 # ======================= MCP Server Setup =======================
@@ -140,7 +149,7 @@ Expected Arguments:
   * Examples: "+10%" (louder), "-5%" (quieter)
   * Percentage must be between 0-100
 """)
-async def play_podcast(conversation: List[Dict[str, str]], rate: str = "+0%", volume: str = "+0%") -> str:
+async def play_podcast(conversation: List[Dict[str, str]], rate: str = "+0%", volume: str = "+0%", ctx: Context = None) -> str:
     """Generate a podcast conversation with alternating male and female speakers.
 
     Args:
@@ -173,6 +182,11 @@ async def play_podcast(conversation: List[Dict[str, str]], rate: str = "+0%", vo
     request_id = f"req_{int(start_time)}"
     
     try:
+        # Log request start
+        if ctx:
+            await ctx.info(f"Starting podcast conversation generation with {len(conversation)} segments")
+            await ctx.info(f"Settings: rate={rate}, volume={volume}")
+            
         # Validate inputs using Pydantic model
         # First convert the input to the expected format
         validated_segments = []
@@ -193,6 +207,9 @@ async def play_podcast(conversation: List[Dict[str, str]], rate: str = "+0%", vo
             volume=volume
         )
         
+        if ctx:
+            await ctx.info(f"Validated {len(validated_segments)} conversation segments")
+        
         # Extract validated values
         segments = podcast_input.conversation
         rate = podcast_input.rate
@@ -205,12 +222,23 @@ async def play_podcast(conversation: List[Dict[str, str]], rate: str = "+0%", vo
         temp_files = []
         segment_details = []
         
+        total_segments = len(segments)
+        if ctx:
+            await ctx.info(f"Beginning speech generation for {total_segments} segments")
+        
         for i, segment in enumerate(segments):
+            # Report progress
+            if ctx:
+                await ctx.report_progress(i, total_segments)
+                
             # Get the voice based on speaker gender
             voice = PODCAST_VOICES[segment.speaker]
             
             # Create temporary file for this segment
             temp_output = os.path.join(TEMP_DIR, f"podcast_segment_{request_id}_{i}.mp3")
+            
+            if ctx:
+                await ctx.info(f"Processing segment {i+1}/{total_segments}: {segment.speaker} voice, {len(segment.text)} chars")
             
             try:
                 # Generate speech for this segment
@@ -219,7 +247,8 @@ async def play_podcast(conversation: List[Dict[str, str]], rate: str = "+0%", vo
                     voice=voice,
                     rate=rate,
                     volume=volume,
-                    output_file=temp_output
+                    output_file=temp_output,
+                    ctx=ctx
                 )
                 
                 temp_files.append(temp_output)
@@ -234,31 +263,50 @@ async def play_podcast(conversation: List[Dict[str, str]], rate: str = "+0%", vo
                     "word_count": len(segment.text.split())
                 })
                 
-            except Exception:
+                if ctx:
+                    await ctx.debug(f"Segment {i+1} processed successfully")
+                
+            except Exception as seg_error:
+                if ctx:
+                    await ctx.error(f"Error processing segment {i+1}: {str(seg_error)}")
                 # Continue with other segments even if one fails
-                pass
         
         # Combine all audio files
         if len(temp_files) > 0:
+            if ctx:
+                await ctx.info(f"Combining {len(temp_files)} audio segments into final file")
+                
             with open(output_file, 'wb') as outfile:
                 for temp_file in temp_files:
                     with open(temp_file, 'rb') as infile:
                         outfile.write(infile.read())
             
             # Play the combined file
+            if ctx:
+                await ctx.info(f"Playing audio file: {output_file}")
             os.system(f"afplay {output_file}")
             
             # Clean up temporary files
+            if ctx:
+                await ctx.debug("Cleaning up temporary files")
             for temp_file in temp_files:
                 try:
                     os.remove(temp_file)
-                except Exception:
-                    pass
+                except Exception as e:
+                    if ctx:
+                        await ctx.warning(f"Failed to remove temp file {temp_file}: {str(e)}")
         else:
-            raise ValueError("No audio segments were successfully generated")
+            error_msg = "No audio segments were successfully generated"
+            if ctx:
+                await ctx.error(error_msg)
+            raise ValueError(error_msg)
         
         # Calculate duration
         duration = time.time() - start_time
+        
+        if ctx:
+            await ctx.info(f"Podcast generation completed in {duration:.2f} seconds")
+            await ctx.report_progress(total_segments, total_segments)  # Mark as complete
         
         # Return successful response
         return json.dumps({
@@ -272,6 +320,10 @@ async def play_podcast(conversation: List[Dict[str, str]], rate: str = "+0%", vo
         }, indent=2)
         
     except Exception as e:
+        # Log error
+        if ctx:
+            await ctx.error(f"Error generating podcast conversation: {str(e)}")
+            
         # Return error information
         return json.dumps({
             "status": "error",
