@@ -99,7 +99,6 @@ If you encounter issues:
 ├── edge_tts_server.py   - Main MCP server script
 ├── requirements.txt     - Dependencies list
 ├── README.md            - Documentation
-├── list_voices.py       - Script to list available voices
 ├── start.sh             - Script to start the server
 └── venv/                - Python virtual environment
 ```
