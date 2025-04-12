@@ -1,26 +1,24 @@
-# Edge TTS MCP Server
+# English Podcast Conversation Server
 
-A high-performance Model Context Protocol (MCP) server that enables Claude to speak using Microsoft Edge's high-quality text-to-speech voices in 30+ languages.
+A specialized Model Context Protocol (MCP) server for generating high-quality podcast conversations with alternating male and female voices using Microsoft Edge's text-to-speech technology.
 
-## What is MCP?
+## What is this?
 
-The Model Context Protocol (MCP) is an open standard developed by Anthropic that allows large language models like Claude to interact with external tools, APIs, and data sources. This server implements MCP to provide Claude with speech synthesis capabilities using Microsoft Edge's TTS service.
+This server makes it easy to create natural-sounding podcast conversations by alternating between professional male and female voices. It's designed specifically for podcast creators and content producers who want to quickly prototype or generate podcast-style content.
 
-## Features
+## Key Features
 
-- **Text-to-Speech in 30+ Languages**: Supports multiple language varieties with natural-sounding voices
-- **SSML Support**: Use Speech Synthesis Markup Language for advanced control over speech output
-- **Voice Listing**: Dynamically retrieve all available voices from Microsoft's service
-- **Performance Optimized**: 
-  - Automatic text chunking for large inputs
-  - Efficient memory management and resource cleanup
-  - Structured logging and robust error handling
+- **Simple Conversation Format**: Just specify speakers and text in a straightforward JSON structure
+- **Professional Voices**: Uses high-quality neural voices from Microsoft Edge TTS
+- **Easy Integration**: Works seamlessly with Claude and other MCP-compatible AI assistants
+- **Optimized Performance**: Efficient generation and processing of multi-speaker audio
+- **Single-Purpose Design**: Focused solely on podcast conversations for simplicity
 
 ## Quick Start
 
 ### Prerequisites
 - macOS operating system
-- Claude Desktop application
+- Claude Desktop application (or another MCP client)
 - Python 3.8 or higher
 - Edge TTS library (`pip install edge-tts`)
 - MCP library (`pip install mcp[cli]`)
@@ -44,7 +42,7 @@ pip install -r requirements.txt
 ```json
 {
   "mcpServers": {
-    "edge-tts": {
+    "podcast-tts": {
       "command": "bash",
       "args": ["/full/path/to/edge-tts-mcp/start.sh"]
     }
@@ -57,99 +55,83 @@ The configuration file is located at:
 
 2. Restart Claude Desktop
 
-## Available MCP Tools
+## Usage
 
-The server provides three MCP tools:
+### Conversation Format
 
-1. `text_to_speech` - Generate speech from text with customizable voice, rate, and volume
-2. `list_voices` - Get a complete list of all available Microsoft Edge TTS voices
-3. `play_with_ssml` - Use SSML markup for precise control over speech synthesis
+The server accepts a simple JSON format where each segment specifies a speaker and their text:
 
-## Usage Examples
-
-### Basic Text-to-Speech
-
-```python
-# Convert text to speech with default English voice
-await text_to_speech("Hello, this is a test message.")
-
-# Use a different language
-await text_to_speech("Bonjour, comment ça va?", "fr-FR-VivienneNeural")
-
-# Adjust speech rate and volume
-await text_to_speech("This is spoken slowly and louder.", "en-US-GuyNeural", "-20%", "+10%")
+```json
+[
+  {
+    "speaker": "male",
+    "text": "Welcome to our podcast! I'm Alex, your host for today."
+  },
+  {
+    "speaker": "female",
+    "text": "And I'm Jordan. We have an exciting topic to discuss today."
+  },
+  {
+    "speaker": "male",
+    "text": "That's right! Today we're diving into the fascinating world of..."
+  }
+]
 ```
 
-### Advanced SSML Usage
+### Using from Claude
 
-```python
-# Use SSML for advanced control
-ssml = """
-<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="en-US">
-  <voice name="en-US-AriaNeural">
-    Normal speech. 
-    <break time="500ms"/>
-    <prosody rate="slow" pitch="+10%">
-      This text is spoken slower and with higher pitch.
-    </prosody>
-  </voice>
-</speak>
-"""
-await play_with_ssml(ssml)
+```
+Can you create a podcast script about [topic] with two hosts, and then use the podcast-tts MCP server to generate audio for it?
 ```
 
-## Supported Languages
+## Voice Options
 
-The server supports over 30 languages including:
+The server uses two dedicated podcast-quality voices:
 
-- English (US, UK, Australia, Canada, India)
-- Spanish (Spain, Mexico)
-- French, German, Italian, Portuguese
-- Chinese (Simplified & Traditional), Japanese, Korean
-- Russian, Arabic, Hindi, and many more
+- **Male Voice**: en-US-GuyNeural
+- **Female Voice**: en-US-AriaNeural
 
-Each language has optimized neural voices that provide natural-sounding speech with proper pronunciation and intonation.
-
-## Architecture
-
-This server is built using:
-
-- **FastMCP**: An optimized framework for building MCP servers
-- **Edge TTS**: Microsoft's Edge Text-to-Speech engine
-- **Pydantic**: For robust request validation and type safety
-- **Asyncio**: For non-blocking I/O operations
+These voices were chosen for their clarity, professional sound, and natural conversational quality.
 
 ## Technical Details
 
-- **Text Processing**: Automatically chunks large texts for stable processing
-- **Audio Format**: Generates MP3 files for high-quality audio playback
-- **Performance**: Optimized for low latency and efficient memory usage
-- **Logging**: Comprehensive logging with request IDs for easy debugging
+### Optional Parameters
+
+- **rate**: Speaking rate adjustment (e.g., "+0%", "-10%", "+20%")
+- **volume**: Volume adjustment (e.g., "+0%", "+10%", "-5%")
+
+### Output
+
+The server returns a JSON response with:
+
+- Status (success/error)
+- Number of segments processed
+- Total word count
+- Processing time
+- Audio file path
+- Detailed information about each segment
 
 ## Limitations
 
-- **macOS Only**: This project currently only supports macOS systems
-- Audio is limited to about 10 minutes per request
-- The service uses an unofficial API to Microsoft Edge TTS
-- Some SSML features might have limited support
-- The server requires internet access to fetch voice data from Microsoft
+- Maximum conversation length: ~64KB total text
+- Maximum audio length: ~10 minutes
+- English language only
+- Limited to two voice options (male/female)
 
 ## Troubleshooting
 
 If you encounter issues:
 
 1. Check the server logs: `cat /tmp/edge_tts_mcp.log`
-2. Check Claude's logs: `cat ~/Library/Logs/Claude/mcp.log`
-3. Make sure the path to the start.sh script is correct in your configuration
-4. Ensure you have the latest version of edge-tts installed: `pip install -U edge-tts`
-5. Restart Claude after making any changes
+2. Verify the server is running
+3. Ensure your conversation format is correct (see example above)
+4. Check that both "speaker" and "text" fields are present for each segment
 
 ## Further Resources
 
 - [Model Context Protocol Documentation](https://modelcontextprotocol.io/)
 - [Claude Desktop MCP Guide](https://support.anthropic.com/en/articles/10949351-getting-started-with-model-context-protocol-mcp-on-claude-for-desktop)
 - [Microsoft Edge TTS Documentation](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/language-support)
-- [FastMCP Framework](https://github.com/jlowin/fastmcp)
 
 ## License
 
