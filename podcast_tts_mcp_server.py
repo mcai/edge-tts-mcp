@@ -134,17 +134,53 @@ TEMP_DIR = tempfile.gettempdir()
 
 # ======================= MCP Tool =======================
 
-@mcp.tool(description="Generate podcast conversation with alternating male and female voices.")
+@mcp.tool(description="""Generate podcast conversation with alternating male and female voices.
+
+Expected Arguments:
+- conversation (required): List of dictionaries, each containing:
+  * "speaker": Must be either "male" or "female" (case-insensitive)
+  * "text": The content to be spoken (cannot be empty)
+  * Example: [{"speaker": "male", "text": "Hello!"}, {"speaker": "female", "text": "Hi there!"}]
+  * The total text length across all segments must not exceed 64,000 characters
+
+- rate (optional): Speaking rate adjustment in format "+X%" or "-X%" 
+  * Default: "+0%" (normal speed)
+  * Examples: "+10%" (faster), "-20%" (slower)
+  * Percentage must be between 0-100
+
+- volume (optional): Volume adjustment in format "+X%" or "-X%"
+  * Default: "+0%" (normal volume)
+  * Examples: "+10%" (louder), "-5%" (quieter)
+  * Percentage must be between 0-100
+""")
 async def play_podcast(conversation: List[Dict[str, str]], rate: str = "+0%", volume: str = "+0%") -> str:
     """Generate a podcast conversation with alternating male and female speakers.
 
     Args:
-        conversation: List of conversation segments, each with "speaker" (male/female) and "text" fields
-        rate: Speaking rate (e.g., -10%, +0%, +10%)
-        volume: Volume adjustment (e.g., -10%, +0%, +10%)
+        conversation: List of conversation segments, each with "speaker" (male/female) and "text" fields.
+                     Each segment must be a dictionary with keys:
+                     - "speaker": Must be "male" or "female" (case-insensitive)
+                     - "text": The content to be spoken (cannot be empty)
+                     Example: [{"speaker": "male", "text": "Hello!"}, {"speaker": "female", "text": "Hi there!"}]
+        rate: Speaking rate adjustment in format "+X%" or "-X%". Default: "+0%".
+              Examples: "+10%" (faster), "-20%" (slower). Percentage must be between 0-100.
+        volume: Volume adjustment in format "+X%" or "-X%". Default: "+0%".
+                Examples: "+10%" (louder), "-5%" (quieter). Percentage must be between 0-100.
         
     Returns:
-        Result of speech generation with audio file path
+        JSON string with the following fields:
+        - status: "success" or "error"
+        - segments_processed: Number of audio segments successfully processed
+        - total_segments: Total number of segments in the conversation
+        - segments: Detailed information about each segment
+        - total_words: Sum of word counts across all segments
+        - audio_file: Path to the generated audio file
+        - processing_time: Time taken to process the request
+        
+        In case of error:
+        - status: "error"
+        - error: Error message
+        - error_type: Name of the exception type
     """
     start_time = time.time()
     request_id = f"req_{int(start_time)}"
@@ -280,17 +316,20 @@ if __name__ == "__main__":
     print("   - play_podcast: Generate multi-speaker podcast conversations")
     
     print("\n📝 Input Format Example:")
-    print("""   [
-     {
+    print("""   {
+     "conversation": [
+       {
          "speaker": "male",
          "text": "Welcome to our podcast! I'm Alex."
-     },
-     {
+       },
+       {
          "speaker": "female",
          "text": "And I'm Jordan. Today we'll be discussing..."
-     },
-     ...
-   ]""")
+       }
+     ],
+     "rate": "+0%",
+     "volume": "+0%"
+   }""")
     
     print("\n🎤 Dedicated podcast voices:")
     print(f"   - {PODCAST_VOICES['male']} (Male): Professional male voice")
