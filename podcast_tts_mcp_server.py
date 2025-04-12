@@ -3,17 +3,31 @@ English Podcast TTS Server
 
 Microsoft Edge TTS integration for podcast content using the Model Context Protocol (MCP).
 Specialized for multi-speaker podcast conversations with male and female voices.
-File: podcast_tts_mcp_server.py
 """
 
+# ======================= Imports =======================
 from fastmcp import FastMCP, Context
 import edge_tts
 import tempfile
 import os
+import sys
 import json
 import time
-from typing import List, Dict
+import asyncio
+import subprocess
+import logging
+from contextlib import asynccontextmanager
+from typing import List, Dict, Optional
 from pydantic import BaseModel, Field, field_validator
+
+# ======================= Configure Logging =======================
+# Set up logging to stderr to avoid interfering with MCP protocol
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler(sys.stderr)]
+)
+logger = logging.getLogger("podcast-tts-mcp")
 
 # ======================= Podcast Voice Data =======================
 
@@ -80,7 +94,35 @@ class PodcastConversation(BaseModel):
             raise ValueError(f"Invalid percentage format: {v}")
         return v
 
+# ======================= Constants =======================
+TEMP_DIR = tempfile.gettempdir()
+REQUEST_EXPIRY_SECONDS = 3600  # Requests expire after 1 hour to prevent memory leaks
+
+# ======================= Request Storage =======================
+PODCAST_REQUESTS = {}  # Dictionary to store request statuses and information
+REQUEST_LOCK = asyncio.Lock()  # Lock to prevent race conditions when updating requests
+
 # ======================= Helper Functions =======================
+
+def log_info(msg):
+    """Log info to stderr to avoid disrupting MCP protocol."""
+    logger.info(msg)
+    print(f"INFO: {msg}", file=sys.stderr)
+
+def log_error(msg):
+    """Log error to stderr to avoid disrupting MCP protocol."""
+    logger.error(msg)
+    print(f"ERROR: {msg}", file=sys.stderr)
+
+def log_debug(msg):
+    """Log debug info to stderr to avoid disrupting MCP protocol."""
+    logger.debug(msg)
+    print(f"DEBUG: {msg}", file=sys.stderr)
+
+def log_warning(msg):
+    """Log warning to stderr to avoid disrupting MCP protocol."""
+    logger.warning(msg)
+    print(f"WARNING: {msg}", file=sys.stderr)
 
 async def generate_speech(text: str, voice: str, rate: str, volume: str, output_file: str, ctx: Context = None) -> None:
     """
@@ -120,100 +162,57 @@ async def generate_speech(text: str, voice: str, rate: str, volume: str, output_
             await ctx.error(f"Speech generation error: {str(e)}")
         raise
 
-# ======================= MCP Server Setup =======================
+async def cleanup_old_requests():
+    """Periodically clean up old requests to prevent memory leaks."""
+    log_info("Starting request cleanup background task")
+    
+    while True:
+        try:
+            current_time = time.time()
+            requests_to_remove = []
+            
+            async with REQUEST_LOCK:
+                for req_id, req_data in PODCAST_REQUESTS.items():
+                    # Check if request is older than the expiry time
+                    if current_time - req_data.get("submitted_at", current_time) > REQUEST_EXPIRY_SECONDS:
+                        requests_to_remove.append(req_id)
+                
+                # Remove expired requests
+                if requests_to_remove:
+                    log_info(f"Cleaning up {len(requests_to_remove)} expired podcast requests")
+                    for req_id in requests_to_remove:
+                        del PODCAST_REQUESTS[req_id]
+            
+            # Sleep for a while before checking again
+            await asyncio.sleep(300)  # Check every 5 minutes
+        except Exception as e:
+            # Log the error but ensure the cleanup task doesn't crash
+            log_error(f"Error in cleanup task: {e}")
+            await asyncio.sleep(300)
 
-# Initialize the MCP server
-mcp = FastMCP("English Podcast Conversation Server")
-
-# Constants
-TEMP_DIR = tempfile.gettempdir()
-
-# ======================= MCP Tool =======================
-
-@mcp.tool(description="""Generate podcast conversation with alternating male and female voices.
-
-Expected Arguments:
-- conversation (required): List of dictionaries, each containing:
-  * "speaker": Must be either "male" or "female" (case-insensitive)
-  * "text": The content to be spoken (cannot be empty)
-  * Example: [{"speaker": "male", "text": "Hello!"}, {"speaker": "female", "text": "Hi there!"}]
-  * The total text length across all segments must not exceed 64,000 characters
-
-- rate (optional): Speaking rate adjustment in format "+X%" or "-X%" 
-  * Default: "+0%" (normal speed)
-  * Examples: "+10%" (faster), "-20%" (slower)
-  * Percentage must be between 0-100
-
-- volume (optional): Volume adjustment in format "+X%" or "-X%"
-  * Default: "+0%" (normal volume)
-  * Examples: "+10%" (louder), "-5%" (quieter)
-  * Percentage must be between 0-100
-""")
-async def play_podcast(conversation: List[Dict[str, str]], rate: str = "+0%", volume: str = "+0%", ctx: Context = None) -> str:
-    """Generate a podcast conversation with alternating male and female speakers.
-
+async def process_podcast_request(request_id: str, segments: List[ConversationSegment], 
+                               rate: str, volume: str, ctx: Optional[Context] = None) -> Dict:
+    """
+    Process a podcast TTS request asynchronously.
+    
     Args:
-        conversation: List of conversation segments, each with "speaker" (male/female) and "text" fields.
-                     Each segment must be a dictionary with keys:
-                     - "speaker": Must be "male" or "female" (case-insensitive)
-                     - "text": The content to be spoken (cannot be empty)
-                     Example: [{"speaker": "male", "text": "Hello!"}, {"speaker": "female", "text": "Hi there!"}]
-        rate: Speaking rate adjustment in format "+X%" or "-X%". Default: "+0%".
-              Examples: "+10%" (faster), "-20%" (slower). Percentage must be between 0-100.
-        volume: Volume adjustment in format "+X%" or "-X%". Default: "+0%".
-                Examples: "+10%" (louder), "-5%" (quieter). Percentage must be between 0-100.
+        request_id: Unique ID for the request
+        segments: List of validated ConversationSegment objects
+        rate: Speaking rate adjustment
+        volume: Volume adjustment
+        ctx: MCP context for logging
         
     Returns:
-        JSON string with the following fields:
-        - status: "success" or "error"
-        - segments_processed: Number of audio segments successfully processed
-        - total_segments: Total number of segments in the conversation
-        - segments: Detailed information about each segment
-        - total_words: Sum of word counts across all segments
-        - audio_file: Path to the generated audio file
-        - processing_time: Time taken to process the request
-        
-        In case of error:
-        - status: "error"
-        - error: Error message
-        - error_type: Name of the exception type
+        Dict with processing results
     """
-    start_time = time.time()
-    request_id = f"req_{int(start_time)}"
-    
     try:
-        # Log request start
-        if ctx:
-            await ctx.info(f"Starting podcast conversation generation with {len(conversation)} segments")
-            await ctx.info(f"Settings: rate={rate}, volume={volume}")
-            
-        # Validate inputs using Pydantic model
-        # First convert the input to the expected format
-        validated_segments = []
-        for segment in conversation:
-            # Handle potential casing differences
-            speaker_key = next((k for k in segment.keys() if k.lower() == "speaker"), "speaker")
-            text_key = next((k for k in segment.keys() if k.lower() == "text"), "text")
-            
-            if speaker_key in segment and text_key in segment:
-                validated_segments.append(ConversationSegment(
-                    speaker=segment[speaker_key],
-                    text=segment[text_key]
-                ))
-                
-        podcast_input = PodcastConversation(
-            conversation=validated_segments,
-            rate=rate,
-            volume=volume
-        )
+        start_time = time.time()
         
-        if ctx:
-            await ctx.info(f"Validated {len(validated_segments)} conversation segments")
-        
-        # Extract validated values
-        segments = podcast_input.conversation
-        rate = podcast_input.rate
-        volume = podcast_input.volume
+        # Update request status
+        async with REQUEST_LOCK:
+            PODCAST_REQUESTS[request_id]["status"] = "processing"
+            PODCAST_REQUESTS[request_id]["progress"] = 0
+            PODCAST_REQUESTS[request_id]["total_segments"] = len(segments)
         
         # Create output file
         output_file = os.path.join(TEMP_DIR, f"podcast_conversation_{request_id}.mp3")
@@ -230,6 +229,10 @@ async def play_podcast(conversation: List[Dict[str, str]], rate: str = "+0%", vo
             # Report progress
             if ctx:
                 await ctx.report_progress(i, total_segments)
+                
+            # Update progress in request storage
+            async with REQUEST_LOCK:
+                PODCAST_REQUESTS[request_id]["progress"] = i
                 
             # Get the voice based on speaker gender
             voice = PODCAST_VOICES[segment.speaker]
@@ -269,9 +272,18 @@ async def play_podcast(conversation: List[Dict[str, str]], rate: str = "+0%", vo
             except Exception as seg_error:
                 if ctx:
                     await ctx.error(f"Error processing segment {i+1}: {str(seg_error)}")
+                
+                # Update request status with error
+                async with REQUEST_LOCK:
+                    PODCAST_REQUESTS[request_id]["errors"].append({
+                        "segment": i,
+                        "error": str(seg_error)
+                    })
                 # Continue with other segments even if one fails
         
         # Combine all audio files
+        result = {}
+        
         if len(temp_files) > 0:
             if ctx:
                 await ctx.info(f"Combining {len(temp_files)} audio segments into final file")
@@ -281,10 +293,24 @@ async def play_podcast(conversation: List[Dict[str, str]], rate: str = "+0%", vo
                     with open(temp_file, 'rb') as infile:
                         outfile.write(infile.read())
             
-            # Play the combined file
+            # Play the combined file in a non-blocking way
             if ctx:
                 await ctx.info(f"Playing audio file: {output_file}")
-            os.system(f"afplay {output_file}")
+            
+            # Use subprocess with Popen instead of os.system to avoid blocking
+            try:
+                # Start the audio playback in a separate process
+                proc = subprocess.Popen(["afplay", output_file], 
+                                stdout=subprocess.PIPE, 
+                                stderr=subprocess.PIPE)
+                
+                log_info(f"Started audio playback in background process (PID: {proc.pid})")
+                
+                if ctx:
+                    await ctx.debug("Audio playback started in background process")
+            except Exception as play_error:
+                if ctx:
+                    await ctx.warning(f"Audio playback error: {str(play_error)}")
             
             # Clean up temporary files
             if ctx:
@@ -295,34 +321,333 @@ async def play_podcast(conversation: List[Dict[str, str]], rate: str = "+0%", vo
                 except Exception as e:
                     if ctx:
                         await ctx.warning(f"Failed to remove temp file {temp_file}: {str(e)}")
+            
+            # Calculate duration
+            duration = time.time() - start_time
+            
+            if ctx:
+                await ctx.info(f"Podcast generation completed in {duration:.2f} seconds")
+                await ctx.report_progress(total_segments, total_segments)  # Mark as complete
+            
+            # Prepare result
+            result = {
+                "status": "success",
+                "segments_processed": len(temp_files),
+                "total_segments": len(segments),
+                "segments": segment_details,
+                "total_words": sum(segment["word_count"] for segment in segment_details),
+                "audio_file": output_file,
+                "processing_time": f"{duration:.2f}s"
+            }
         else:
             error_msg = "No audio segments were successfully generated"
             if ctx:
                 await ctx.error(error_msg)
-            raise ValueError(error_msg)
+            
+            result = {
+                "status": "error",
+                "error": error_msg,
+                "error_type": "ProcessingError"
+            }
         
-        # Calculate duration
-        duration = time.time() - start_time
+        # Update request status
+        async with REQUEST_LOCK:
+            if result.get("status") == "success":
+                PODCAST_REQUESTS[request_id]["status"] = "completed"
+                PODCAST_REQUESTS[request_id]["result"] = result
+                PODCAST_REQUESTS[request_id]["progress"] = total_segments
+            else:
+                PODCAST_REQUESTS[request_id]["status"] = "failed"
+                PODCAST_REQUESTS[request_id]["result"] = result
         
-        if ctx:
-            await ctx.info(f"Podcast generation completed in {duration:.2f} seconds")
-            await ctx.report_progress(total_segments, total_segments)  # Mark as complete
-        
-        # Return successful response
-        return json.dumps({
-            "status": "success",
-            "segments_processed": len(temp_files),
-            "total_segments": len(segments),
-            "segments": segment_details,
-            "total_words": sum(segment["word_count"] for segment in segment_details),
-            "audio_file": output_file,
-            "processing_time": f"{duration:.2f}s"
-        }, indent=2)
-        
+        return result
+            
     except Exception as e:
         # Log error
         if ctx:
             await ctx.error(f"Error generating podcast conversation: {str(e)}")
+        
+        # Update request status
+        async with REQUEST_LOCK:
+            PODCAST_REQUESTS[request_id]["status"] = "failed"
+            PODCAST_REQUESTS[request_id]["result"] = {
+                "status": "error",
+                "error": str(e),
+                "error_type": type(e).__name__
+            }
+        
+        # Return error information
+        return {
+            "status": "error",
+            "error": str(e),
+            "error_type": type(e).__name__
+        }
+
+# ======================= Lifespan Context Manager =======================
+@asynccontextmanager
+async def server_lifespan(app):
+    """Server lifespan context manager that handles startup and shutdown tasks."""
+    log_info("Server starting up - initializing background tasks")
+    
+    # Start cleanup task
+    cleanup_task = asyncio.create_task(cleanup_old_requests())
+    
+    # Yield control back to the server
+    try:
+        yield
+    finally:
+        # Clean up on shutdown
+        log_info("Server shutting down - cleaning up tasks")
+        if not cleanup_task.done():
+            cleanup_task.cancel()
+        log_info("Server shutdown complete")
+
+# ======================= Initialize the MCP Server =======================
+# Initialize the FastMCP server with lifespan management
+mcp = FastMCP(
+    "English Podcast Conversation Server",
+    debug_logs=False,
+    lifespan=server_lifespan
+)
+
+log_info("MCP server initialized")
+
+# ======================= MCP Tools =======================
+
+@mcp.tool(description="""Submit a podcast TTS request with alternating male and female voices.
+
+Expected Arguments:
+- conversation (required): List of dictionaries, each containing:
+  * "speaker": Must be either "male" or "female" (case-insensitive)
+  * "text": The content to be spoken (cannot be empty)
+  * Example: [{"speaker": "male", "text": "Hello!"}, {"speaker": "female", "text": "Hi there!"}]
+  * The total text length across all segments must not exceed 64,000 characters
+
+- rate (optional): Speaking rate adjustment in format "+X%" or "-X%" 
+  * Default: "+0%" (normal speed)
+  * Examples: "+10%" (faster), "-20%" (slower)
+  * Percentage must be between 0-100
+
+- volume (optional): Volume adjustment in format "+X%" or "-X%"
+  * Default: "+0%" (normal volume)
+  * Examples: "+10%" (louder), "-5%" (quieter)
+  * Percentage must be between 0-100
+""")
+async def play_podcast(conversation: List[Dict[str, str]], rate: str = "+0%", volume: str = "+0%", ctx: Context = None) -> str:
+    """Submit a podcast TTS request and start playing the audio when ready.
+
+    Args:
+        conversation: List of conversation segments, each with "speaker" (male/female) and "text" fields.
+                     Each segment must be a dictionary with keys:
+                     - "speaker": Must be "male" or "female" (case-insensitive)
+                     - "text": The content to be spoken (cannot be empty)
+                     Example: [{"speaker": "male", "text": "Hello!"}, {"speaker": "female", "text": "Hi there!"}]
+        rate: Speaking rate adjustment in format "+X%" or "-X%". Default: "+0%".
+              Examples: "+10%" (faster), "-20%" (slower). Percentage must be between 0-100.
+        volume: Volume adjustment in format "+X%" or "-X%". Default: "+0%".
+                Examples: "+10%" (louder), "-5%" (quieter). Percentage must be between 0-100.
+        
+    Returns:
+        JSON string with the following fields:
+        - request_id: Unique ID for this request
+        - status: "submitted" (initially)
+        - message: Confirmation message
+        
+        In case of error:
+        - status: "error"
+        - error: Error message
+        - error_type: Name of the exception type
+    """
+    try:
+        # Generate a unique request ID
+        request_id = f"req_{int(time.time())}"
+        
+        # Log request start
+        if ctx:
+            await ctx.info(f"Starting podcast conversation generation with {len(conversation)} segments")
+            await ctx.info(f"Settings: rate={rate}, volume={volume}, request_id={request_id}")
+        
+        log_info(f"Received podcast request: {request_id} with {len(conversation)} segments")
+            
+        # Validate inputs using Pydantic model
+        # First convert the input to the expected format
+        validated_segments = []
+        for segment in conversation:
+            # Handle potential casing differences
+            speaker_key = next((k for k in segment.keys() if k.lower() == "speaker"), "speaker")
+            text_key = next((k for k in segment.keys() if k.lower() == "text"), "text")
+            
+            if speaker_key in segment and text_key in segment:
+                validated_segments.append(ConversationSegment(
+                    speaker=segment[speaker_key],
+                    text=segment[text_key]
+                ))
+                
+        podcast_input = PodcastConversation(
+            conversation=validated_segments,
+            rate=rate,
+            volume=volume
+        )
+        
+        if ctx:
+            await ctx.info(f"Validated {len(validated_segments)} conversation segments")
+        
+        # Extract validated values
+        segments = podcast_input.conversation
+        rate = podcast_input.rate
+        volume = podcast_input.volume
+        
+        # Store request in global storage
+        async with REQUEST_LOCK:
+            PODCAST_REQUESTS[request_id] = {
+                "status": "submitted",
+                "submitted_at": time.time(),
+                "progress": 0,
+                "total_segments": len(segments),
+                "errors": [],
+                "settings": {
+                    "rate": rate,
+                    "volume": volume,
+                },
+                "result": None
+            }
+        
+        # Start processing in background
+        # We no longer need to register the task as lifespan handles task management
+        asyncio.create_task(process_podcast_request(
+            request_id=request_id,
+            segments=segments,
+            rate=rate,
+            volume=volume,
+            ctx=ctx
+        ))
+        
+        log_info(f"Started background processing for request: {request_id}")
+        
+        # Return request info immediately
+        return json.dumps({
+            "status": "submitted",
+            "request_id": request_id,
+            "message": f"Podcast TTS request submitted with {len(segments)} segments. Use check_podcast_status to monitor progress.",
+            "total_segments": len(segments)
+        }, indent=2)
+        
+    except Exception as e:
+        # Log error
+        log_error(f"Error submitting podcast request: {str(e)}")
+        if ctx:
+            await ctx.error(f"Error submitting podcast conversation: {str(e)}")
+            
+        # Return error information
+        return json.dumps({
+            "status": "error",
+            "error": str(e),
+            "error_type": type(e).__name__
+        }, indent=2)
+
+
+@mcp.tool(description="""Check the status of a previously submitted podcast TTS request.
+
+Expected Arguments:
+- request_id (required): The request ID returned when submitting the podcast TTS request
+  * Example: "req_1649875030"
+""")
+async def check_podcast_status(request_id: str, ctx: Context = None) -> str:
+    """Check the status of a previously submitted podcast TTS request.
+
+    Args:
+        request_id: The unique identifier for the podcast TTS request (returned when submitting)
+        
+    Returns:
+        JSON string with the status information:
+        - status: "submitted", "processing", "completed", "failed", or "not_found"
+        - progress: Number of segments processed so far
+        - total_segments: Total number of segments in the conversation
+        - progress_percentage: Percentage of processing completed
+        - submitted_at: Timestamp when the request was submitted
+        - ... and other information based on the status
+        
+        If status is "completed", includes the full result information.
+        If status is "failed", includes error information.
+    """
+    try:
+        if ctx:
+            await ctx.info(f"Checking status for podcast TTS request: {request_id}")
+        
+        log_info(f"Checking status for request: {request_id}")
+        
+        # Check if request exists
+        async with REQUEST_LOCK:
+            if request_id not in PODCAST_REQUESTS:
+                log_info(f"Request not found: {request_id}")
+                return json.dumps({
+                    "status": "not_found",
+                    "message": f"No podcast TTS request found with ID: {request_id}"
+                }, indent=2)
+            
+            # Get request data
+            request_data = PODCAST_REQUESTS[request_id]
+            
+            # Calculate progress percentage
+            if request_data["total_segments"] > 0:
+                progress_percentage = round((request_data["progress"] / request_data["total_segments"]) * 100, 1)
+            else:
+                progress_percentage = 0
+            
+            # Prepare response based on status
+            response = {
+                "status": request_data["status"],
+                "request_id": request_id,
+                "progress": request_data["progress"],
+                "total_segments": request_data["total_segments"],
+                "progress_percentage": progress_percentage,
+                "submitted_at": request_data["submitted_at"],
+                "submitted_at_formatted": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(request_data["submitted_at"]))
+            }
+            
+            # Add additional data based on status
+            if request_data["status"] == "completed" and request_data["result"]:
+                response.update(request_data["result"])
+                
+                # If complete and successful, offer to play the audio in non-blocking way
+                if request_data["result"].get("status") == "success" and "audio_file" in request_data["result"]:
+                    if ctx:
+                        await ctx.info(f"Playing completed audio file: {request_data['result']['audio_file']}")
+                    
+                    # Use subprocess with Popen instead of os.system to avoid blocking
+                    try:
+                        # Start the audio playback in a separate process
+                        proc = subprocess.Popen(["afplay", request_data['result']['audio_file']], 
+                                        stdout=subprocess.PIPE, 
+                                        stderr=subprocess.PIPE)
+                        
+                        log_info(f"Started audio playback in background process (PID: {proc.pid})")
+                        
+                        if ctx:
+                            await ctx.debug("Audio playback started in background process")
+                    except Exception as play_error:
+                        log_warning(f"Audio playback error: {str(play_error)}")
+                        if ctx:
+                            await ctx.warning(f"Audio playback error: {str(play_error)}")
+                    
+            elif request_data["status"] == "failed" and request_data["result"]:
+                response.update(request_data["result"])
+            
+            # Include any errors
+            if request_data["errors"]:
+                response["errors"] = request_data["errors"]
+        
+        log_info(f"Status for request {request_id}: {request_data['status']}")
+        if ctx:
+            await ctx.info(f"Status for request {request_id}: {request_data['status']}")
+            
+        return json.dumps(response, indent=2)
+        
+    except Exception as e:
+        # Log error
+        log_error(f"Error checking podcast status: {str(e)}")
+        if ctx:
+            await ctx.error(f"Error checking podcast status: {str(e)}")
             
         # Return error information
         return json.dumps({
@@ -334,10 +659,18 @@ async def play_podcast(conversation: List[Dict[str, str]], rate: str = "+0%", vo
 # ======================= Main Entry Point =======================
 
 if __name__ == "__main__":
+    log_info("Podcast TTS MCP server starting up")
+    
     try:
+        # Configure the event loop
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
         # Run the MCP server
+        log_info("Starting MCP server")
         mcp.run()
+        
     except KeyboardInterrupt:
-        pass
-    except Exception:
-        pass
+        log_info("Server stopped by user")
+    except Exception as e:
+        log_error(f"Server error: {e}")

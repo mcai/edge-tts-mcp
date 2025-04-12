@@ -1,11 +1,17 @@
 #!/bin/bash
 
+# Simple wrapper script that delegates to the Python wrapper
+
 # Change to the script directory
 cd "$(dirname "$0")"
 
-# Activate the virtual environment
-source venv/bin/activate
+# Activate virtual environment if it exists
+if [ -d "venv" ] && [ -f "venv/bin/activate" ]; then
+    source venv/bin/activate
+fi
 
-# Start the Podcast TTS MCP server
-echo "Starting Podcast TTS MCP server..."
-python3 podcast_tts_mcp_server.py
+# Make sure the wrapper is executable
+chmod +x mcp_wrapper.py
+
+# Run the Python wrapper
+exec python3 mcp_wrapper.py
