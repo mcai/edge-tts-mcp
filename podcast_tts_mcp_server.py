@@ -1,8 +1,9 @@
 """
-English Podcast TTS Server
+Multilingual Podcast TTS Server
 
 Microsoft Edge TTS integration for podcast content using the Model Context Protocol (MCP).
 Specialized for multi-speaker podcast conversations with male and female voices.
+Supports English, Simplified Chinese, and Traditional Chinese.
 """
 
 # ======================= Imports =======================
@@ -17,7 +18,7 @@ import asyncio
 import subprocess
 import logging
 from contextlib import asynccontextmanager
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Union
 from pydantic import BaseModel, Field, field_validator
 
 # ======================= Configure Logging =======================
@@ -31,11 +32,24 @@ logger = logging.getLogger("podcast-tts-mcp")
 
 # ======================= Podcast Voice Data =======================
 
-# Dedicated voices for podcast TTS
+# Dedicated voices for podcast TTS by language
 PODCAST_VOICES = {
-    "male": "en-US-GuyNeural",       # Male voice
-    "female": "en-US-AriaNeural"     # Female voice
+    "en": {  # English
+        "male": "en-US-GuyNeural",       # Male voice
+        "female": "en-US-AriaNeural"     # Female voice
+    },
+    "zh-CN": {  # Simplified Chinese
+        "male": "zh-CN-YunyangNeural",   # Professional and reliable, great for news reading
+        "female": "zh-CN-XiaoxiaoNeural" # Warm tone, suitable for news and novels
+    },
+    "zh-TW": {  # Traditional Chinese
+        "male": "zh-TW-YunJheNeural",    # Friendly and positive, ideal for general content
+        "female": "zh-TW-HsiaoChenNeural" # Friendly and positive, suitable for general use
+    }
 }
+
+# Default language setting
+DEFAULT_LANGUAGE = "en"
 
 # ======================= Pydantic Models for Request Validation =======================
 
@@ -63,8 +77,18 @@ class ConversationSegment(BaseModel):
 class PodcastConversation(BaseModel):
     """Pydantic model for a podcast conversation."""
     conversation: List[ConversationSegment] = Field(..., description="List of conversation segments")
+    language: str = Field(DEFAULT_LANGUAGE, description="Language code ('en', 'zh-CN', or 'zh-TW')")
     rate: str = Field("+0%", description="Speaking rate (e.g., -10%, +0%, +10%)")
     volume: str = Field("+0%", description="Volume adjustment (e.g., -10%, +0%, +10%)")
+    
+    @field_validator('language')
+    @classmethod
+    def validate_language(cls, v):
+        """Validate that the language is supported."""
+        supported_languages = list(PODCAST_VOICES.keys())
+        if v not in supported_languages:
+            raise ValueError(f"Language must be one of: {', '.join(supported_languages)}")
+        return v
     
     @field_validator('conversation')
     @classmethod
@@ -191,13 +215,15 @@ async def cleanup_old_requests():
             await asyncio.sleep(300)
 
 async def process_podcast_request(request_id: str, segments: List[ConversationSegment], 
-                               rate: str, volume: str, ctx: Optional[Context] = None) -> Dict:
+                                 language: str, rate: str, volume: str, 
+                                 ctx: Optional[Context] = None) -> Dict:
     """
     Process a podcast TTS request asynchronously.
     
     Args:
         request_id: Unique ID for the request
         segments: List of validated ConversationSegment objects
+        language: Language code for TTS
         rate: Speaking rate adjustment
         volume: Volume adjustment
         ctx: MCP context for logging
@@ -223,7 +249,7 @@ async def process_podcast_request(request_id: str, segments: List[ConversationSe
         
         total_segments = len(segments)
         if ctx:
-            await ctx.info(f"Beginning speech generation for {total_segments} segments")
+            await ctx.info(f"Beginning speech generation for {total_segments} segments in {language}")
         
         for i, segment in enumerate(segments):
             # Report progress
@@ -234,14 +260,20 @@ async def process_podcast_request(request_id: str, segments: List[ConversationSe
             async with REQUEST_LOCK:
                 PODCAST_REQUESTS[request_id]["progress"] = i
                 
-            # Get the voice based on speaker gender
-            voice = PODCAST_VOICES[segment.speaker]
+            # Get the voice based on speaker gender and language
+            try:
+                voice = PODCAST_VOICES[language][segment.speaker]
+            except KeyError:
+                error_msg = f"Invalid language or speaker: language={language}, speaker={segment.speaker}"
+                if ctx:
+                    await ctx.error(error_msg)
+                raise ValueError(error_msg)
             
             # Create temporary file for this segment
             temp_output = os.path.join(TEMP_DIR, f"podcast_segment_{request_id}_{i}.mp3")
             
             if ctx:
-                await ctx.info(f"Processing segment {i+1}/{total_segments}: {segment.speaker} voice, {len(segment.text)} chars")
+                await ctx.info(f"Processing segment {i+1}/{total_segments}: {segment.speaker} voice ({voice}), {len(segment.text)} chars")
             
             try:
                 # Generate speech for this segment
@@ -332,6 +364,7 @@ async def process_podcast_request(request_id: str, segments: List[ConversationSe
             # Prepare result
             result = {
                 "status": "success",
+                "language": language,
                 "segments_processed": len(temp_files),
                 "total_segments": len(segments),
                 "segments": segment_details,
@@ -405,7 +438,7 @@ async def server_lifespan(app):
 # ======================= Initialize the MCP Server =======================
 # Initialize the FastMCP server with lifespan management
 mcp = FastMCP(
-    "English Podcast Conversation Server",
+    "Multilingual Podcast Conversation Server",
     debug_logs=False,
     lifespan=server_lifespan
 )
@@ -423,6 +456,10 @@ Expected Arguments:
   * Example: [{"speaker": "male", "text": "Hello!"}, {"speaker": "female", "text": "Hi there!"}]
   * The total text length across all segments must not exceed 64,000 characters
 
+- language (optional): Language code for TTS
+  * Options: "en" (English), "zh-CN" (Simplified Chinese), "zh-TW" (Traditional Chinese)
+  * Default: "en"
+
 - rate (optional): Speaking rate adjustment in format "+X%" or "-X%" 
   * Default: "+0%" (normal speed)
   * Examples: "+10%" (faster), "-20%" (slower)
@@ -433,7 +470,8 @@ Expected Arguments:
   * Examples: "+10%" (louder), "-5%" (quieter)
   * Percentage must be between 0-100
 """)
-async def play_podcast(conversation: List[Dict[str, str]], rate: str = "+0%", volume: str = "+0%", ctx: Context = None) -> str:
+async def play_podcast(conversation: List[Dict[str, str]], language: str = DEFAULT_LANGUAGE, 
+                      rate: str = "+0%", volume: str = "+0%", ctx: Context = None) -> str:
     """Submit a podcast TTS request and start playing the audio when ready.
 
     Args:
@@ -442,6 +480,7 @@ async def play_podcast(conversation: List[Dict[str, str]], rate: str = "+0%", vo
                      - "speaker": Must be "male" or "female" (case-insensitive)
                      - "text": The content to be spoken (cannot be empty)
                      Example: [{"speaker": "male", "text": "Hello!"}, {"speaker": "female", "text": "Hi there!"}]
+        language: Language code for TTS. Options: "en", "zh-CN", "zh-TW". Default: "en".
         rate: Speaking rate adjustment in format "+X%" or "-X%". Default: "+0%".
               Examples: "+10%" (faster), "-20%" (slower). Percentage must be between 0-100.
         volume: Volume adjustment in format "+X%" or "-X%". Default: "+0%".
@@ -464,10 +503,22 @@ async def play_podcast(conversation: List[Dict[str, str]], rate: str = "+0%", vo
         
         # Log request start
         if ctx:
-            await ctx.info(f"Starting podcast conversation generation with {len(conversation)} segments")
-            await ctx.info(f"Settings: rate={rate}, volume={volume}, request_id={request_id}")
+            await ctx.info(f"Starting podcast conversation generation with {len(conversation)} segments in {language}")
+            await ctx.info(f"Settings: language={language}, rate={rate}, volume={volume}, request_id={request_id}")
         
-        log_info(f"Received podcast request: {request_id} with {len(conversation)} segments")
+        log_info(f"Received podcast request: {request_id} with {len(conversation)} segments in {language}")
+        
+        # Validate that the language is supported
+        if language not in PODCAST_VOICES:
+            supported_languages = list(PODCAST_VOICES.keys())
+            error_msg = f"Unsupported language: {language}. Supported languages: {', '.join(supported_languages)}"
+            if ctx:
+                await ctx.error(error_msg)
+            return json.dumps({
+                "status": "error",
+                "error": error_msg,
+                "error_type": "ValueError"
+            }, indent=2)
             
         # Validate inputs using Pydantic model
         # First convert the input to the expected format
@@ -485,6 +536,7 @@ async def play_podcast(conversation: List[Dict[str, str]], rate: str = "+0%", vo
                 
         podcast_input = PodcastConversation(
             conversation=validated_segments,
+            language=language,
             rate=rate,
             volume=volume
         )
@@ -494,6 +546,7 @@ async def play_podcast(conversation: List[Dict[str, str]], rate: str = "+0%", vo
         
         # Extract validated values
         segments = podcast_input.conversation
+        language = podcast_input.language
         rate = podcast_input.rate
         volume = podcast_input.volume
         
@@ -506,6 +559,7 @@ async def play_podcast(conversation: List[Dict[str, str]], rate: str = "+0%", vo
                 "total_segments": len(segments),
                 "errors": [],
                 "settings": {
+                    "language": language,
                     "rate": rate,
                     "volume": volume,
                 },
@@ -517,6 +571,7 @@ async def play_podcast(conversation: List[Dict[str, str]], rate: str = "+0%", vo
         asyncio.create_task(process_podcast_request(
             request_id=request_id,
             segments=segments,
+            language=language,
             rate=rate,
             volume=volume,
             ctx=ctx
@@ -527,8 +582,9 @@ async def play_podcast(conversation: List[Dict[str, str]], rate: str = "+0%", vo
         # Return request info immediately
         return json.dumps({
             "status": "submitted",
+            "language": language,
             "request_id": request_id,
-            "message": f"Podcast TTS request submitted with {len(segments)} segments. Use check_podcast_status to monitor progress.",
+            "message": f"Podcast TTS request submitted with {len(segments)} segments in {language}. Use check_podcast_status to monitor progress.",
             "total_segments": len(segments)
         }, indent=2)
         
@@ -605,6 +661,10 @@ async def check_podcast_status(request_id: str, ctx: Context = None) -> str:
                 "submitted_at_formatted": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(request_data["submitted_at"]))
             }
             
+            # Add language information if available
+            if "settings" in request_data and "language" in request_data["settings"]:
+                response["language"] = request_data["settings"]["language"]
+            
             # Add additional data based on status
             if request_data["status"] == "completed" and request_data["result"]:
                 response.update(request_data["result"])
@@ -643,7 +703,7 @@ async def check_podcast_status(request_id: str, ctx: Context = None) -> str:
 # ======================= Main Entry Point =======================
 
 if __name__ == "__main__":
-    log_info("Podcast TTS MCP server starting up")
+    log_info("Multilingual Podcast TTS MCP server starting up")
     
     try:
         # Configure the event loop
