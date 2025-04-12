@@ -19,6 +19,7 @@ The Model Context Protocol (MCP) is an open standard developed by Anthropic that
 ## Quick Start
 
 ### Prerequisites
+- macOS operating system
 - Claude Desktop application
 - Python 3.8 or higher
 - Edge TTS library (`pip install edge-tts`)
@@ -52,9 +53,7 @@ pip install -r requirements.txt
 ```
 
 The configuration file is located at:
-- Mac: `~/Library/Application Support/Claude/claude_desktop_config.json`
-- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
-- Linux: `~/.config/Claude/claude_desktop_config.json`
+- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
 
 2. Restart Claude Desktop
 
@@ -129,6 +128,7 @@ This server is built using:
 
 ## Limitations
 
+- **macOS Only**: This project currently only supports macOS systems
 - Audio is limited to about 10 minutes per request
 - The service uses an unofficial API to Microsoft Edge TTS
 - Some SSML features might have limited support
