@@ -10,12 +10,11 @@ from mcp.server.fastmcp import FastMCP
 import edge_tts
 import tempfile
 import os
-import asyncio
 import logging
 import json
 import time
-from typing import List, Dict, Any, Optional
-from pydantic import BaseModel, Field, validator
+from typing import List, Dict
+from pydantic import BaseModel, Field, field_validator
 
 # Configure logging
 logging.basicConfig(
@@ -43,14 +42,16 @@ class ConversationSegment(BaseModel):
     speaker: str = Field(..., description="Speaker gender ('male' or 'female')")
     text: str = Field(..., description="The text to be spoken by this speaker")
     
-    @validator('speaker')
+    @field_validator('speaker')
+    @classmethod
     def validate_speaker(cls, v):
         """Validate that the speaker is either 'male' or 'female'."""
         if v.lower() not in ["male", "female"]:
             raise ValueError("Speaker must be either 'male' or 'female'")
         return v.lower()
     
-    @validator('text')
+    @field_validator('text')
+    @classmethod
     def validate_text_not_empty(cls, v):
         """Validate text is not empty."""
         if not v.strip():
@@ -63,7 +64,8 @@ class PodcastConversation(BaseModel):
     rate: str = Field("+0%", description="Speaking rate (e.g., -10%, +0%, +10%)")
     volume: str = Field("+0%", description="Volume adjustment (e.g., -10%, +0%, +10%)")
     
-    @validator('conversation')
+    @field_validator('conversation')
+    @classmethod
     def validate_conversation_not_empty(cls, v):
         """Validate that the conversation has at least one segment."""
         if not v:
@@ -76,7 +78,8 @@ class PodcastConversation(BaseModel):
         
         return v
     
-    @validator('rate', 'volume')
+    @field_validator('rate', 'volume')
+    @classmethod
     def validate_percentage(cls, v):
         """Validate rate and volume follow the correct format."""
         if not (v.startswith('+') or v.startswith('-')) or not v.endswith('%'):
