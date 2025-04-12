@@ -21,16 +21,6 @@ This project provides a Model Context Protocol (MCP) server that allows Claude t
 
 ## Usage
 
-### Testing the Edge TTS
-
-Before using with Claude, you can test that the TTS engine works:
-
-```bash
-./auto_test.sh
-```
-
-This will generate a test audio file and play it using the default voice.
-
 ### Starting the Server
 
 Run the server with:
@@ -43,13 +33,20 @@ Keep this terminal window open while using Claude.
 
 ### Configuring Claude
 
-The configuration for Claude has already been set up. If you need to reconfigure:
+Add this Edge TTS server to Claude's configuration file at `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
-```bash
-./setup_claude.sh
+```json
+{
+  "mcpServers": {
+    "edge-tts": {
+      "command": "bash",
+      "args": ["FULL_PATH_TO_PROJECT/start.sh"]
+    }
+  }
+}
 ```
 
-Then restart Claude.
+Replace `FULL_PATH_TO_PROJECT` with the absolute path to the project directory (e.g., `/Users/username/Projects/edge-tts-mcp`). If the file already has other MCP servers, just add the "edge-tts" entry to the existing "mcpServers" object. Restart Claude after saving.
 
 ### Available Tools
 
@@ -91,10 +88,9 @@ Please play this SSML using Edge TTS:
 If you encounter issues:
 
 1. Check Claude's MCP logs: `cat ~/Library/Logs/Claude/mcp.log`
-2. Verify the server is running by executing `./start.sh` in a terminal
-3. Ensure the virtual environment is being used (the scripts handle this automatically)
-4. Test Edge TTS directly with `./auto_test.sh`
-5. Restart Claude after making configuration changes
+2. Make sure the path to the start.sh script in your Claude configuration is correct
+3. Try running the start.sh script manually from the terminal to verify it works
+4. Restart Claude after making configuration changes
 
 ## Project Structure
 
@@ -102,13 +98,10 @@ If you encounter issues:
 ~/Projects/edge-tts-mcp/
 ├── edge_tts_server.py   - Main MCP server script
 ├── requirements.txt     - Dependencies list
-├── README.md           - Documentation
-├── auto_test.sh        - Script to test TTS functionality
-├── list_voices.py      - Script to list available voices
-├── setup_claude.sh     - Script to configure Claude
-├── start.sh            - Script to start the server
-├── test_edge_tts.py    - Interactive test script (not normally used)
-└── venv/               - Python virtual environment
+├── README.md            - Documentation
+├── list_voices.py       - Script to list available voices
+├── start.sh             - Script to start the server
+└── venv/                - Python virtual environment
 ```
 
 ## License
