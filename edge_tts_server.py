@@ -1,9 +1,8 @@
 from mcp.server.fastmcp import FastMCP
 import edge_tts
-import asyncio
 import tempfile
 import os
-from typing import List, Optional
+from typing import List
 
 # Initialize the MCP server
 mcp = FastMCP("Edge TTS Server")
