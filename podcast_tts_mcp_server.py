@@ -3,7 +3,7 @@ English Podcast TTS Server
 
 Microsoft Edge TTS integration for podcast content using the Model Context Protocol (MCP).
 Specialized for multi-speaker podcast conversations with male and female voices.
-File: edge_tts_mcp_server.py
+File: podcast_tts_mcp_server.py
 """
 
 from mcp.server.fastmcp import FastMCP
@@ -23,10 +23,10 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler(os.path.join(tempfile.gettempdir(), "edge_tts_mcp.log"))
+        logging.FileHandler(os.path.join(tempfile.gettempdir(), "podcast_tts_mcp.log"))
     ]
 )
-logger = logging.getLogger("edge-tts-mcp")
+logger = logging.getLogger("podcast-tts-mcp")
 
 # ======================= Podcast Voice Data =======================
 
@@ -294,7 +294,7 @@ if __name__ == "__main__":
     print(f"   - {PODCAST_VOICES['female']} (Female): Professional female voice")
     
     print(f"\n📁 Audio files saved to: {TEMP_DIR}")
-    print(f"📝 Logs saved to: {os.path.join(TEMP_DIR, 'edge_tts_mcp.log')}")
+    print(f"📝 Logs saved to: {os.path.join(TEMP_DIR, 'podcast_tts_mcp.log')}")
     
     print("\n🚀 Server is running. Press Ctrl+C to stop.")
     

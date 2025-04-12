@@ -27,8 +27,8 @@ This server makes it easy to create natural-sounding podcast conversations by al
 
 1. Clone this repository:
 ```bash
-git clone https://github.com/yourusername/edge-tts-mcp.git
-cd edge-tts-mcp
+git clone https://github.com/mcai/podcast-tts-mcp.git
+cd podcast-tts-mcp
 ```
 
 2. Install the required dependencies:
@@ -44,7 +44,7 @@ pip install -r requirements.txt
   "mcpServers": {
     "podcast-tts": {
       "command": "bash",
-      "args": ["/full/path/to/edge-tts-mcp/start.sh"]
+      "args": ["/full/path/to/podcast-tts-mcp/start.sh"]
     }
   }
 }
@@ -122,7 +122,7 @@ The server returns a JSON response with:
 
 If you encounter issues:
 
-1. Check the server logs: `cat /tmp/edge_tts_mcp.log`
+1. Check the server logs: `cat /tmp/podcast_tts_mcp.log`
 2. Verify the server is running
 3. Ensure your conversation format is correct (see example above)
 4. Check that both "speaker" and "text" fields are present for each segment
