@@ -309,53 +309,23 @@ async def play_podcast(conversation: List[Dict[str, str]], rate: str = "+0%", vo
 if __name__ == "__main__":
     server_start_time = time.time()
     
-    # Print startup messages to stderr instead of stdout to avoid interfering with MCP JSON protocol
+    # Remove all print statements to avoid interfering with MCP JSON protocol
+    # Only use logging, which goes to the log file and stderr
     
-    print("╔══════════════════════════════════════════════════════╗", file=sys.stderr)
-    print("║     🎙️  English Podcast Conversation Server v1.0.0     ║", file=sys.stderr)
-    print("╚══════════════════════════════════════════════════════╝", file=sys.stderr)
-    
-    print("\n📋 Available tool:", file=sys.stderr)
-    print("   - play_podcast: Generate multi-speaker podcast conversations", file=sys.stderr)
-    
-    print("\n📝 Input Format Example:", file=sys.stderr)
-    print("""   {
-     "conversation": [
-       {
-         "speaker": "male",
-         "text": "Welcome to our podcast! I'm Alex."
-       },
-       {
-         "speaker": "female",
-         "text": "And I'm Jordan. Today we'll be discussing..."
-       }
-     ],
-     "rate": "+0%",
-     "volume": "+0%"
-   }""", file=sys.stderr)
-    
-    print("\n🎤 Dedicated podcast voices:", file=sys.stderr)
-    print(f"   - {PODCAST_VOICES['male']} (Male): Professional male voice", file=sys.stderr)
-    print(f"   - {PODCAST_VOICES['female']} (Female): Professional female voice", file=sys.stderr)
-    
-    print(f"\n📁 Audio files saved to: {TEMP_DIR}", file=sys.stderr)
-    print(f"📝 Logs saved to: {os.path.join(TEMP_DIR, 'podcast_tts_mcp.log')}", file=sys.stderr)
-    
-    print("\n🚀 Server is running. Press Ctrl+C to stop.", file=sys.stderr)
-    
-    # Add server startup to log
+    # Log server startup
     logger.info(f"English Podcast Conversation Server v1.0.0 started")
+    logger.info(f"Tool available: play_podcast (generates multi-speaker podcast conversations)")
+    logger.info(f"Dedicated voices: {PODCAST_VOICES['male']} (Male), {PODCAST_VOICES['female']} (Female)")
+    logger.info(f"Audio files saved to: {TEMP_DIR}")
+    logger.info(f"Logs saved to: {os.path.join(TEMP_DIR, 'podcast_tts_mcp.log')}")
     
     try:
         # Run the MCP server
         mcp.run()
     except KeyboardInterrupt:
-        print("\n🛑 Server shutting down...", file=sys.stderr)
         logger.info("Server shutdown requested by user (Ctrl+C)")
     except Exception as e:
-        print(f"\n❌ Error: {str(e)}", file=sys.stderr)
         logger.error(f"Server error: {str(e)}", exc_info=True)
     finally:
         server_uptime = time.time() - server_start_time
         logger.info(f"Server shutdown. Uptime: {server_uptime:.2f} seconds")
-        print("✓ Shutdown complete.", file=sys.stderr)
