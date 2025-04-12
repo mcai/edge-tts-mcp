@@ -1,8 +1,9 @@
 """
 Edge TTS MCP Server
 
-An optimized server for Microsoft Edge TTS integration using FastMCP.
-Supports text-to-speech in 30+ languages with high-quality voices.
+Microsoft Edge TTS integration using the Model Context Protocol (MCP).
+Provides high-quality text-to-speech in 30+ languages with optimized performance.
+File: edge_tts_mcp_server.py
 """
 
 from mcp.server.fastmcp import FastMCP
@@ -273,7 +274,7 @@ async def generate_speech(text: str, voice: str, rate: str, volume: str, output_
 # ======================= MCP Server Setup =======================
 
 # Initialize the MCP server
-mcp = FastMCP("Edge TTS Server")
+mcp = FastMCP("Edge TTS MCP Server")
 
 # Constants
 MAX_CHARS = 64000  # ~64KB (2^16 = 65,536 bytes) with overhead for WebSocket message

@@ -8,4 +8,4 @@ source venv/bin/activate
 
 # Start the Edge TTS MCP server
 echo "Starting Edge TTS MCP server..."
-python3 edge_tts_server.py
+python3 edge_tts_mcp_server.py
