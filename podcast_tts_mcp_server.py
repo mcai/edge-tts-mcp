@@ -10,23 +10,10 @@ from fastmcp import FastMCP
 import edge_tts
 import tempfile
 import os
-import sys
-import logging
 import json
 import time
 from typing import List, Dict
 from pydantic import BaseModel, Field, field_validator
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler(os.path.join(tempfile.gettempdir(), "podcast_tts_mcp.log"))
-    ]
-)
-logger = logging.getLogger("podcast-tts-mcp")
 
 # ======================= Podcast Voice Data =======================
 
@@ -121,8 +108,7 @@ async def generate_speech(text: str, voice: str, rate: str, volume: str, output_
         )
         
         await communicate.save(output_file)
-    except Exception as e:
-        logger.error(f"Speech generation error: {str(e)}")
+    except Exception:
         raise
 
 # ======================= MCP Server Setup =======================
@@ -212,10 +198,6 @@ async def play_podcast(conversation: List[Dict[str, str]], rate: str = "+0%", vo
         rate = podcast_input.rate
         volume = podcast_input.volume
         
-        # Log the request
-        logger.info(f"[{request_id}] Podcast conversation request: {len(segments)} segments, "
-                   f"rate={rate}, volume={volume}")
-        
         # Create output file
         output_file = os.path.join(TEMP_DIR, f"podcast_conversation_{request_id}.mp3")
         
@@ -232,9 +214,6 @@ async def play_podcast(conversation: List[Dict[str, str]], rate: str = "+0%", vo
             
             try:
                 # Generate speech for this segment
-                logger.info(f"[{request_id}] Processing segment {i+1}/{len(segments)}: "
-                           f"{segment.speaker} voice, {len(segment.text)} chars")
-                
                 await generate_speech(
                     text=segment.text,
                     voice=voice,
@@ -255,9 +234,9 @@ async def play_podcast(conversation: List[Dict[str, str]], rate: str = "+0%", vo
                     "word_count": len(segment.text.split())
                 })
                 
-            except Exception as seg_error:
-                logger.error(f"[{request_id}] Error processing segment {i+1}: {str(seg_error)}")
+            except Exception:
                 # Continue with other segments even if one fails
+                pass
         
         # Combine all audio files
         if len(temp_files) > 0:
@@ -273,14 +252,13 @@ async def play_podcast(conversation: List[Dict[str, str]], rate: str = "+0%", vo
             for temp_file in temp_files:
                 try:
                     os.remove(temp_file)
-                except Exception as e:
-                    logger.warning(f"[{request_id}] Failed to remove temp file: {str(e)}")
+                except Exception:
+                    pass
         else:
             raise ValueError("No audio segments were successfully generated")
         
-        # Log successful completion
+        # Calculate duration
         duration = time.time() - start_time
-        logger.info(f"[{request_id}] Podcast conversation generated successfully in {duration:.2f}s")
         
         # Return successful response
         return json.dumps({
@@ -294,9 +272,6 @@ async def play_podcast(conversation: List[Dict[str, str]], rate: str = "+0%", vo
         }, indent=2)
         
     except Exception as e:
-        # Log error with traceback
-        logger.error(f"[{request_id}] Error generating podcast conversation: {str(e)}", exc_info=True)
-        
         # Return error information
         return json.dumps({
             "status": "error",
@@ -307,25 +282,10 @@ async def play_podcast(conversation: List[Dict[str, str]], rate: str = "+0%", vo
 # ======================= Main Entry Point =======================
 
 if __name__ == "__main__":
-    server_start_time = time.time()
-    
-    # Remove all print statements to avoid interfering with MCP JSON protocol
-    # Only use logging, which goes to the log file and stderr
-    
-    # Log server startup
-    logger.info(f"English Podcast Conversation Server v1.0.0 started")
-    logger.info(f"Tool available: play_podcast (generates multi-speaker podcast conversations)")
-    logger.info(f"Dedicated voices: {PODCAST_VOICES['male']} (Male), {PODCAST_VOICES['female']} (Female)")
-    logger.info(f"Audio files saved to: {TEMP_DIR}")
-    logger.info(f"Logs saved to: {os.path.join(TEMP_DIR, 'podcast_tts_mcp.log')}")
-    
     try:
         # Run the MCP server
         mcp.run()
     except KeyboardInterrupt:
-        logger.info("Server shutdown requested by user (Ctrl+C)")
-    except Exception as e:
-        logger.error(f"Server error: {str(e)}", exc_info=True)
-    finally:
-        server_uptime = time.time() - server_start_time
-        logger.info(f"Server shutdown. Uptime: {server_uptime:.2f} seconds")
+        pass
+    except Exception:
+        pass
