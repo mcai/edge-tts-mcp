@@ -10,6 +10,7 @@ from fastmcp import FastMCP
 import edge_tts
 import tempfile
 import os
+import sys
 import logging
 import json
 import time
@@ -308,14 +309,16 @@ async def play_podcast(conversation: List[Dict[str, str]], rate: str = "+0%", vo
 if __name__ == "__main__":
     server_start_time = time.time()
     
-    print("╔══════════════════════════════════════════════════════╗")
-    print("║     🎙️  English Podcast Conversation Server v1.0.0     ║")
-    print("╚══════════════════════════════════════════════════════╝")
+    # Print startup messages to stderr instead of stdout to avoid interfering with MCP JSON protocol
     
-    print("\n📋 Available tool:")
-    print("   - play_podcast: Generate multi-speaker podcast conversations")
+    print("╔══════════════════════════════════════════════════════╗", file=sys.stderr)
+    print("║     🎙️  English Podcast Conversation Server v1.0.0     ║", file=sys.stderr)
+    print("╚══════════════════════════════════════════════════════╝", file=sys.stderr)
     
-    print("\n📝 Input Format Example:")
+    print("\n📋 Available tool:", file=sys.stderr)
+    print("   - play_podcast: Generate multi-speaker podcast conversations", file=sys.stderr)
+    
+    print("\n📝 Input Format Example:", file=sys.stderr)
     print("""   {
      "conversation": [
        {
@@ -329,16 +332,16 @@ if __name__ == "__main__":
      ],
      "rate": "+0%",
      "volume": "+0%"
-   }""")
+   }""", file=sys.stderr)
     
-    print("\n🎤 Dedicated podcast voices:")
-    print(f"   - {PODCAST_VOICES['male']} (Male): Professional male voice")
-    print(f"   - {PODCAST_VOICES['female']} (Female): Professional female voice")
+    print("\n🎤 Dedicated podcast voices:", file=sys.stderr)
+    print(f"   - {PODCAST_VOICES['male']} (Male): Professional male voice", file=sys.stderr)
+    print(f"   - {PODCAST_VOICES['female']} (Female): Professional female voice", file=sys.stderr)
     
-    print(f"\n📁 Audio files saved to: {TEMP_DIR}")
-    print(f"📝 Logs saved to: {os.path.join(TEMP_DIR, 'podcast_tts_mcp.log')}")
+    print(f"\n📁 Audio files saved to: {TEMP_DIR}", file=sys.stderr)
+    print(f"📝 Logs saved to: {os.path.join(TEMP_DIR, 'podcast_tts_mcp.log')}", file=sys.stderr)
     
-    print("\n🚀 Server is running. Press Ctrl+C to stop.")
+    print("\n🚀 Server is running. Press Ctrl+C to stop.", file=sys.stderr)
     
     # Add server startup to log
     logger.info(f"English Podcast Conversation Server v1.0.0 started")
@@ -347,12 +350,12 @@ if __name__ == "__main__":
         # Run the MCP server
         mcp.run()
     except KeyboardInterrupt:
-        print("\n🛑 Server shutting down...")
+        print("\n🛑 Server shutting down...", file=sys.stderr)
         logger.info("Server shutdown requested by user (Ctrl+C)")
     except Exception as e:
-        print(f"\n❌ Error: {str(e)}")
+        print(f"\n❌ Error: {str(e)}", file=sys.stderr)
         logger.error(f"Server error: {str(e)}", exc_info=True)
     finally:
         server_uptime = time.time() - server_start_time
         logger.info(f"Server shutdown. Uptime: {server_uptime:.2f} seconds")
-        print("✓ Shutdown complete.")
+        print("✓ Shutdown complete.", file=sys.stderr)
