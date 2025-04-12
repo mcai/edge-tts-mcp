@@ -6,7 +6,7 @@ Specialized for multi-speaker podcast conversations with male and female voices.
 File: podcast_tts_mcp_server.py
 """
 
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP
 import edge_tts
 import tempfile
 import os

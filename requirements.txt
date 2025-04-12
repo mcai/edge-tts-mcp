@@ -1,6 +1,6 @@
 # Core dependencies
 edge-tts>=6.1.5
-mcp[cli]>=0.2.0
+fastmcp>=0.2.0
 pydantic>=2.0.0  # Require Pydantic v2 for field_validator
 
 # API server dependencies (for SSE transport)
